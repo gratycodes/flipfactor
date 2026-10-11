@@ -1,0 +1,35 @@
+{
+  "name": "flipfactor",
+  "version": "0.1.0",
+  "description": "Re-runs a flaky test under controlled perturbations (order, timezone, locale, seed, clock, CPU load, parallelism) and reports which factor flips the result.",
+  "license": "MIT",
+  "author": "Gratus Antin",
+  "type": "module",
+  "bin": {
+    "flipfactor": "dist/flipfactor.cjs"
+  },
+  "files": [
+    "dist",
+    "python/flipfactor_pytest",
+    "runtime"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "esbuild src/cli.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/flipfactor.cjs --banner:js=\"#!/usr/bin/env node\"",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run test/unit",
+    "test:e2e": "vitest run test/e2e"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.12.0",
+    "typescript": "5.9",
+    "typescript-eslint": "^8.71.1",
+    "vitest": "^5.0.3"
+  }
+}

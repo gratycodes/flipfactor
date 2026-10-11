@@ -1,0 +1,14 @@
+{
+  "name": "flipfactor-jest-fixtures",
+  "private": true,
+  "description": "Deliberately flaky Jest tests used by flipfactor's end-to-end tests.",
+  "scripts": {
+    "test": "jest"
+  },
+  "jest": {
+    "testEnvironment": "node"
+  },
+  "devDependencies": {
+    "jest": "30.5.2"
+  }
+}
