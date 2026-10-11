@@ -26,7 +26,7 @@ export function toText(report: Report): string {
     lines.push("");
     lines.push(`${LABEL[t.classification]}  ${t.id}`);
     lines.push(`  ${t.headline}`);
-    lines.push(`  baseline: alone ${ev(t.baseline.isolated)}; whole file ${ev(t.baseline.suite)}`);
+    lines.push(`  baseline: alone ${ev(t.baseline.isolated)}; with its neighbours ${ev(t.baseline.suite)}`);
     for (const f of t.findings.filter(real)) {
       lines.push(`  [${f.axis}] ${f.strength}: ${f.summary}`);
       for (const e of f.evidence) lines.push(`      ${e.label.padEnd(44)} ${ev(e)}`);
@@ -53,7 +53,7 @@ export function toMarkdown(report: Report): string {
   for (const t of report.tests) out.push(`| \`${mdEscape(t.id)}\` | ${LABEL[t.classification]} | ${mdEscape(t.headline)} |`);
   for (const t of report.tests) {
     out.push("", `<details><summary><code>${t.id}</code>: ${LABEL[t.classification].toLowerCase()}</summary>`, "");
-    out.push(`Baseline: alone ${ev(t.baseline.isolated)}; whole file ${ev(t.baseline.suite)}.`, "");
+    out.push(`Baseline: alone ${ev(t.baseline.isolated)}; with its neighbours ${ev(t.baseline.suite)}.`, "");
     const shown = t.findings.filter(real);
     for (const f of shown) {
       out.push(`**${f.axis}** (${f.strength}): ${f.summary}`, "", "| Condition | Failed |", "| --- | --- |");

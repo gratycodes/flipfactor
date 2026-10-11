@@ -132,8 +132,8 @@ export function headline(classification: Classification, findings: Finding[], is
     case "not-reproduced":
       return `never failed in ${isolated.runs + suite.runs} baseline runs or under any perturbation`;
     case "broken":
-      return `fails every time (${counts(isolated)} alone, ${counts(suite)} in its file) and no perturbation makes it pass`;
+      return `fails every time (${counts(isolated)} alone, ${counts(suite)} with its neighbours) and no perturbation makes it pass`;
     default:
-      return `fails intermittently (${counts(isolated)} alone, ${counts(suite)} in its file) but no tested factor explains it`;
+      return `fails intermittently (${counts(isolated)} alone, ${counts(suite)} with its neighbours) but no tested factor explains it`;
   }
 }

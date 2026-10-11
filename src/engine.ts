@@ -93,7 +93,8 @@ export class Engine {
     }
     const alone: RunSpec = { tests: [target], env: {} };
     const isolated = await this.evidence("alone", alone, target, this.opts.baselineRuns);
-    const suite = await this.evidence("whole file, default order", { tests: neighbours, env: {} }, target, this.opts.baselineRuns);
+    const unit = this.adapter.name === "go" ? "package" : "file";
+    const suite = await this.evidence(`whole ${unit}, default order`, { tests: neighbours, env: {} }, target, this.opts.baselineRuns);
 
     const findings: Finding[] = [];
     for (const axis of this.opts.axes) {
