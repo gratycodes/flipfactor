@@ -171,3 +171,22 @@ describe("defaultClocks", () => {
     expect(defaultClocks(new Date("2099-05-01T00:00:00Z"))[2]).toBe("2104-02-29T12:00:00");
   });
 });
+
+describe("Engine controls an explained factor", () => {
+  it("pins a passing seed after the seed axis explains a random flake", async () => {
+    const failingSeeds = new Set([2, 5]);
+    let unseeded = 0;
+    const adapter = new FakeAdapter(TESTS, (spec, t) => {
+      if (t !== "t::victim") return false;
+      if (spec.rngSeed !== undefined) return failingSeeds.has(spec.rngSeed);
+      return unseeded++ % 2 === 0; // random-looking when unseeded
+    });
+    const d = await new Engine(adapter, opts({ axes: ["timezone", "seed", "clock"] })).diagnose("t::victim");
+    expect(d.findings.find((f) => f.axis === "seed")!.strength).toBe("deterministic");
+    expect(d.findings.filter((f) => f.axis !== "seed").every((f) => f.strength === "none")).toBe(true);
+    // Every timezone/clock run happened with seed 1 (the first passing seed) pinned.
+    const later = adapter.calls.filter((c) => c.env.TZ !== undefined || c.clock !== undefined);
+    expect(later.length).toBeGreaterThan(0);
+    expect(later.every((c) => c.rngSeed === 1)).toBe(true);
+  });
+});

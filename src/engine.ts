@@ -52,6 +52,8 @@ interface Sample {
 export class Engine {
   runs = 0;
   private caps!: Capabilities;
+  /** Factors already explained and held fixed for the remaining axes. */
+  private control: Partial<RunSpec> = {};
 
   constructor(
     private readonly adapter: Adapter,
@@ -97,9 +99,24 @@ export class Engine {
     const suite = await this.evidence(`whole ${unit}, default order`, { tests: neighbours, env: {} }, target, this.opts.baselineRuns);
 
     const findings: Finding[] = [];
-    for (const axis of this.opts.axes) {
-      const f = await this.axis(axis, target, neighbours, isolated, suite);
-      if (f) findings.push(f);
+    // The seed axis runs first. If it explains the failure, later axes run
+    // with a passing seed pinned, so a randomly flaky test cannot make some
+    // unrelated factor look guilty by chance.
+    const axes = this.opts.axes.includes("seed") ? ["seed" as const, ...this.opts.axes.filter((a) => a !== "seed")] : this.opts.axes;
+    this.control = {};
+    let reference = isolated;
+    for (const axis of axes) {
+      const f = await this.axis(axis, target, neighbours, reference, suite);
+      if (!f) continue;
+      findings.push(f);
+      if (axis === "seed" && f.strength === "deterministic") {
+        const pin = f.evidence.map((e) => /^seed (\d+)$/.exec(e.label)).find((m, i) => m && f.evidence[i]!.failed === 0);
+        if (pin) {
+          this.control = { rngSeed: Number(pin[1]) };
+          this.opts.log(`  pinning seed ${pin[1]} for the remaining axes`);
+          reference = await this.evidence(`alone, seed ${pin[1]}`, { tests: [target], env: {}, ...this.control }, target, this.opts.baselineRuns);
+        }
+      }
     }
     const classification = classify(isolated, suite, findings);
     return {
@@ -160,7 +177,8 @@ export class Engine {
     this.opts.log(` ${axis}`);
     const variants: Variant[] = [{ value: referenceLabel, ev: { ...isolated, label: referenceLabel }, reference: true }];
     const specs = new Map<string, RunSpec>();
-    for (const c of conditions) {
+    for (const raw of conditions) {
+      const c = { ...raw, spec: { ...this.control, ...raw.spec } };
       specs.set(c.value, c.spec);
       variants.push({ value: c.value, ev: await this.evidence(c.value, c.spec, target, this.opts.repeats) });
     }
@@ -177,6 +195,7 @@ export class Engine {
     }
     const failingSpec = verdict.failing.find((v) => !v.reference);
     let summary = summarise(axis, verdict, variants);
+    if (this.control.rngSeed !== undefined && verdict.strength !== "none") summary += ` (with seed ${this.control.rngSeed} pinned)`;
     if (axis === "cpu" && verdict.strength !== "none") {
       const slow = variants.find((v) => !v.reference);
       summary += `; median test time ${isolated.medianMs ?? "?"} ms -> ${slow?.ev.medianMs ?? "?"} ms, which points at a hard-coded time budget or timeout`;
@@ -193,8 +212,8 @@ export class Engine {
   private async parallelAxis(target: string): Promise<Finding> {
     this.opts.log(" parallel");
     const scope = this.opts.scope ?? this.adapter.defaultScope(target);
-    const serialSpec: RunSpec = { tests: [target], env: {}, scope, workers: 1 };
-    const parSpec: RunSpec = { tests: [target], env: {}, scope, workers: this.opts.workers };
+    const serialSpec: RunSpec = { tests: [target], env: {}, scope, workers: 1, ...this.control };
+    const parSpec: RunSpec = { tests: [target], env: {}, scope, workers: this.opts.workers, ...this.control };
     const serial = await this.evidence(`${scope} with 1 worker`, serialSpec, target, this.opts.repeats);
     const par = await this.evidence(`${scope} with ${this.opts.workers} workers`, parSpec, target, this.opts.repeats);
     const variants: Variant[] = [
