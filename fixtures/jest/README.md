@@ -11,4 +11,5 @@ that flipfactor names it. Do not "fix" them.
 | `__tests__/checksum.test.js` › `checksum is fast` | timing: hard 250 ms wall-clock budget |
 | `__tests__/billing.test.js` › `next period label is a real month` | clock: breaks in December |
 | `__tests__/export.test.js` › `export roundtrip` | parallelism: shares a temp file with `upload.test.js` |
+| `__tests__/price.test.js` › `price uses a dot for decimals` | locale: `toLocaleString()` without a locale |
 | `__tests__/stable.test.js` › `addition` | control: never fails |
