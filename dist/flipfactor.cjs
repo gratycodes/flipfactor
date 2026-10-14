@@ -1306,7 +1306,7 @@ async function main(argv) {
   const axes = list2(v.axes, [...ALL_AXES]);
   for (const a of axes) if (!ALL_AXES.includes(a)) throw new Error(`unknown axis ${a}; choose from ${ALL_AXES.join(", ")}`);
   let tests = positionals;
-  if (v.from) tests = [...tests, ...failedFromReport((0, import_node_fs6.readFileSync)(v.from, "utf8"), runner, cwd)];
+  if (v.from) tests = [...failedFromReport((0, import_node_fs6.readFileSync)(v.from, "utf8"), runner, cwd), ...tests];
   tests = [...new Set(tests)];
   const maxTests = int(v["max-tests"], 5, "max-tests");
   if (tests.length > maxTests) {

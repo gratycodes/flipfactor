@@ -155,7 +155,7 @@ export async function main(argv: string[]): Promise<number> {
   for (const a of axes) if (!ALL_AXES.includes(a)) throw new Error(`unknown axis ${a}; choose from ${ALL_AXES.join(", ")}`);
 
   let tests = positionals;
-  if (v.from) tests = [...tests, ...failedFromReport(readFileSync(v.from, "utf8"), runner, cwd)];
+  if (v.from) tests = [...failedFromReport(readFileSync(v.from, "utf8"), runner, cwd), ...tests];
   tests = [...new Set(tests)];
   const maxTests = int(v["max-tests"], 5, "max-tests");
   if (tests.length > maxTests) {

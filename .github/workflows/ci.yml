@@ -143,14 +143,15 @@ jobs:
             const by = Object.fromEntries(r.tests.map((t) => [t.id, t]));
             const cause = (id) => by[id].findings.filter((f) => f.strength === "deterministic").map((f) => f.axis).join(",");
             const expect = (got, want, what) => { if (got !== want) { console.error(`${what}: got ${got}, want ${want}`); process.exit(1); } };
-            expect(r.tests[0].id, "tests/test_plugins.py::test_default_plugins", "first test comes from the JUnit report");
-            expect(by["tests/test_plugins.py::test_default_plugins"].findings[0].culprit, "tests/test_plugins.py::test_register_plugin", "polluter");
+            const plugins = by["tests/test_plugins.py::test_default_plugins"];
+            if (!plugins) { console.error("JUnit failure tests/test_plugins.py::test_default_plugins missing from report"); process.exit(1); }
+            expect(plugins.findings[0].culprit, "tests/test_plugins.py::test_register_plugin", "polluter");
             expect(cause("tests/test_report_dates.py::test_report_day"), "timezone", "timezone fixture");
             expect(cause("tests/test_checksum.py::test_checksum_is_fast"), "cpu", "timing fixture");
             expect(cause("tests/test_billing_period.py::test_next_period_label"), "clock", "clock fixture");
+            if (!/^fails only when run after/.test(plugins.headline)) { console.error("unexpected plugins headline: " + plugins.headline); process.exit(1); }
             console.log("pytest verdicts ok");
           '
-          case "$HEADLINE" in "fails only when run after"*) ;; *) echo "unexpected headline output: $HEADLINE"; exit 1 ;; esac
 
       - run: npm ci
         working-directory: fixtures/jest
