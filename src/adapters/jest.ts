@@ -85,6 +85,11 @@ export function findJestConfig(cwd: string): { kind: "file" | "package" | "none"
     const file = path.join(cwd, name);
     if (existsSync(file)) return { kind: "file", file };
   }
+  for (const name of ["jest.config.ts", "jest.config.mts", "jest.config.cts"]) {
+    if (existsSync(path.join(cwd, name))) {
+      throw new Error(`${name}: TypeScript Jest configs are not supported yet; compile it to jest.config.js or move it into package.json`);
+    }
+  }
   const pkg = path.join(cwd, "package.json");
   if (existsSync(pkg)) {
     const parsed = JSON.parse(readFileSync(pkg, "utf8")) as { jest?: unknown };
