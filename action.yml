@@ -1,0 +1,110 @@
+name: flipfactor
+description: Re-run failed tests under controlled perturbations and report which factor makes them flaky.
+author: Gratus Antin
+branding:
+  icon: shuffle
+  color: orange
+
+inputs:
+  runner:
+    description: pytest, jest or go
+    required: true
+  tests:
+    description: Test ids to diagnose, one per line.
+    required: false
+    default: ""
+  from-report:
+    description: Take failed tests from a pytest JUnit XML file or a Jest --json file.
+    required: false
+    default: ""
+  working-directory:
+    description: Project root the tests run from.
+    required: false
+    default: "."
+  axes:
+    description: Comma-separated subset of order,parallel,timezone,locale,seed,clock,cpu. Empty means all.
+    required: false
+    default: ""
+  max-tests:
+    description: Diagnose at most this many tests (each costs dozens of runs).
+    required: false
+    default: "3"
+  args:
+    description: Extra flipfactor CLI arguments, e.g. "--python .venv/bin/python --repeats 3".
+    required: false
+    default: ""
+  comment:
+    description: Post or update one comment on the pull request with the result.
+    required: false
+    default: "true"
+  install-faketime:
+    description: apt-get install libfaketime on Linux so the clock axis works for pytest.
+    required: false
+    default: "true"
+  github-token:
+    description: Token used to comment.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  report-json:
+    description: Path of the JSON report.
+    value: ${{ steps.run.outputs.report-json }}
+  report-markdown:
+    description: Path of the Markdown report.
+    value: ${{ steps.run.outputs.report-markdown }}
+  headline:
+    description: Verdict for the first diagnosed test.
+    value: ${{ steps.run.outputs.headline }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install libfaketime
+      if: inputs.install-faketime == 'true' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        if ! ls /usr/lib/*/faketime/libfaketime.so.1 >/dev/null 2>&1; then
+          sudo apt-get update -qq && sudo apt-get install -y -qq faketime >/dev/null
+        fi
+
+    - name: Diagnose
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        FF_RUNNER: ${{ inputs.runner }}
+        FF_TESTS: ${{ inputs.tests }}
+        FF_FROM: ${{ inputs.from-report }}
+        FF_AXES: ${{ inputs.axes }}
+        FF_MAX: ${{ inputs.max-tests }}
+        FF_ARGS: ${{ inputs.args }}
+      run: |
+        json="$RUNNER_TEMP/flipfactor.json"
+        md="$RUNNER_TEMP/flipfactor.md"
+        args=(--runner "$FF_RUNNER" --json "$json" --markdown "$md" --max-tests "$FF_MAX")
+        if [ -n "$FF_FROM" ]; then args+=(--from "$FF_FROM"); fi
+        if [ -n "$FF_AXES" ]; then args+=(--axes "$FF_AXES"); fi
+        # shellcheck disable=SC2206 # word splitting of extra args is intended
+        extra=($FF_ARGS)
+        ids=()
+        while IFS= read -r line; do
+          line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
+          if [ -n "$line" ]; then ids+=("$line"); fi
+        done <<< "$FF_TESTS"
+        node "$GITHUB_ACTION_PATH/dist/flipfactor.cjs" "${args[@]}" "${extra[@]}" -- "${ids[@]}"
+        cat "$md" >> "$GITHUB_STEP_SUMMARY"
+        {
+          echo "report-json=$json"
+          echo "report-markdown=$md"
+          echo "headline=$(node -e 'const r=require(process.argv[1]); process.stdout.write(r.tests[0] ? r.tests[0].headline.replace(/\n/g," ") : "")' "$json")"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Comment on the pull request
+      if: inputs.comment == 'true' && (github.event_name == 'pull_request' || github.event_name == 'pull_request_target')
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        FF_MARKDOWN: ${{ steps.run.outputs.report-markdown }}
+        FF_PR: ${{ github.event.pull_request.number }}
+      run: node "$GITHUB_ACTION_PATH/scripts/post-comment.mjs"

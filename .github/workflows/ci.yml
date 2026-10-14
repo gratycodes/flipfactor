@@ -1,0 +1,180 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint, typecheck, dist up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: dist/ matches the source
+        run: |
+          npm run build
+          git diff --exit-code -- dist/ || { echo "::error::run npm run build and commit dist/"; exit 1; }
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install ruff==0.17.0
+      - run: ruff check python && ruff format --check python
+
+  unit:
+    name: unit (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  plugin:
+    name: pytest plugin (python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install pytest
+      - run: python -m pytest -q
+        working-directory: python
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+
+  e2e:
+    name: e2e (${{ matrix.runner }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [pytest, jest, go]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build
+      - if: matrix.runner == 'pytest'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - if: matrix.runner == 'pytest'
+        run: |
+          pip install pytest pytest-xdist
+          sudo apt-get update -qq && sudo apt-get install -y -qq faketime
+      - if: matrix.runner == 'jest'
+        run: npm ci
+        working-directory: fixtures/jest
+      - if: matrix.runner == 'go'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: fixtures/go/go.mod
+          cache: false
+      - run: npx vitest run test/e2e/${{ matrix.runner }}.test.ts
+        env:
+          FLIPFACTOR_PYTHON: python
+
+  action:
+    name: action self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install pytest pytest-xdist
+
+      - name: Run the pytest fixtures like a normal CI step
+        working-directory: fixtures/pytest
+        run: python -m pytest -p no:cacheprovider -p no:randomly --junitxml="$RUNNER_TEMP/junit.xml" tests/test_plugins.py tests/test_stable.py || true
+
+      - name: Diagnose the failure, plus three known-flaky tests
+        id: pytest
+        uses: ./
+        with:
+          runner: pytest
+          working-directory: fixtures/pytest
+          from-report: ${{ runner.temp }}/junit.xml
+          tests: |
+            tests/test_report_dates.py::test_report_day
+            tests/test_checksum.py::test_checksum_is_fast
+            tests/test_billing_period.py::test_next_period_label
+          max-tests: "4"
+          args: --python python
+
+      - name: Check the pytest verdicts
+        env:
+          REPORT: ${{ steps.pytest.outputs.report-json }}
+          HEADLINE: ${{ steps.pytest.outputs.headline }}
+        run: |
+          node -e '
+            const r = require(process.env.REPORT);
+            const by = Object.fromEntries(r.tests.map((t) => [t.id, t]));
+            const cause = (id) => by[id].findings.filter((f) => f.strength === "deterministic").map((f) => f.axis).join(",");
+            const expect = (got, want, what) => { if (got !== want) { console.error(`${what}: got ${got}, want ${want}`); process.exit(1); } };
+            expect(r.tests[0].id, "tests/test_plugins.py::test_default_plugins", "first test comes from the JUnit report");
+            expect(by["tests/test_plugins.py::test_default_plugins"].findings[0].culprit, "tests/test_plugins.py::test_register_plugin", "polluter");
+            expect(cause("tests/test_report_dates.py::test_report_day"), "timezone", "timezone fixture");
+            expect(cause("tests/test_checksum.py::test_checksum_is_fast"), "cpu", "timing fixture");
+            expect(cause("tests/test_billing_period.py::test_next_period_label"), "clock", "clock fixture");
+            console.log("pytest verdicts ok");
+          '
+          case "$HEADLINE" in "fails only when run after"*) ;; *) echo "unexpected headline output: $HEADLINE"; exit 1 ;; esac
+
+      - run: npm ci
+        working-directory: fixtures/jest
+
+      - name: Diagnose Jest tests (no comment)
+        id: jest
+        uses: ./
+        with:
+          runner: jest
+          working-directory: fixtures/jest
+          axes: order,timezone,locale
+          comment: "false"
+          tests: |
+            __tests__/plugins.test.js::plugins defaults to alpha only
+            __tests__/price.test.js::price uses a dot for decimals
+
+      - name: Check the Jest verdicts
+        env:
+          REPORT: ${{ steps.jest.outputs.report-json }}
+        run: |
+          node -e '
+            const r = require(process.env.REPORT);
+            const [order, locale] = r.tests;
+            if (order.findings.find((f) => f.axis === "order").culprit !== "__tests__/plugins.test.js::plugins registers beta") process.exit(1);
+            if (locale.findings.find((f) => f.axis === "locale").strength !== "deterministic") process.exit(1);
+            console.log("jest verdicts ok");
+          '
